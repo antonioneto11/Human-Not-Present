@@ -5,6 +5,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
 import type { Approver } from "./approval";
+import { checkDelivery, PRODUCT_SPECS, type DeliveryResult, type DeliverySpecs } from "./delivery";
 import type { Ledger, LedgerEntry } from "./ledger";
 import { atomicToUsd } from "./money";
 import { evaluatePolicy, type PolicyConfig } from "./policy";
@@ -12,7 +13,10 @@ import { evaluatePolicy, type PolicyConfig } from "./policy";
 export interface NetworkInfo {
   caip2: string;
   usdc: string;
-  explorerTx: string;
+  /** Block-explorer tx URL prefix. Only used for real (non-simulated) settlement. */
+  explorerTx?: string;
+  /** True when settlement is simulated: receipts are local IDs, never explorer links. */
+  simulated?: boolean;
 }
 
 export interface Quote {
@@ -26,7 +30,7 @@ export interface Quote {
 }
 
 export type PurchaseResult =
-  | { status: "settled"; data: unknown; receipt: LedgerEntry; replayed: boolean }
+  | { status: "settled"; data: unknown; receipt: LedgerEntry; replayed: boolean; delivery?: DeliveryResult }
   | { status: "free"; data: unknown }
   | { status: "denied" | "declined" | "failed"; message: string; receipt?: LedgerEntry };
 
@@ -46,6 +50,7 @@ export class PaymentService {
     private readonly approve: Approver,
     private readonly runId: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly deliverySpecs: DeliverySpecs = PRODUCT_SPECS,
   ) {
     const account = privateKeyToAccount(privateKey);
     this.address = account.address;
@@ -108,6 +113,7 @@ export class PaymentService {
     }
     const req = quote.requirement;
     const base = {
+      ...(this.network.simulated ? { simulated: true } : {}),
       idempotencyKey: key,
       runId: this.runId,
       url,
@@ -120,7 +126,7 @@ export class PaymentService {
 
     // 1. Policy (deterministic, not up to the model)
     const decision = evaluatePolicy(
-      { merchant: quote.merchant, network: req.network, asset: req.asset, amountAtomic: BigInt(req.amount) },
+      { merchant: quote.merchant, network: req.network, asset: req.asset, amountAtomic: BigInt(req.amount), payTo: req.payTo },
       this.policy,
       { expectedNetwork: this.network.caip2, expectedAsset: this.network.usdc, spentTodayAtomic: this.ledger.spentTodayAtomic() },
     );
@@ -161,14 +167,19 @@ export class PaymentService {
     const settle = safe(() => this.http.getPaymentSettleResponse((h) => res.headers.get(h)));
     const data = await readBody(res);
     const tx = settle?.transaction;
+    // Code, not the model, decides whether what we paid for is usable.
+    const delivery = checkDelivery(url, data, this.deliverySpecs);
     const receipt = this.ledger.append({
       ...base,
       status: "settled",
       transaction: tx,
-      explorerUrl: tx ? `${this.network.explorerTx}${tx}` : undefined,
+      // Never link a simulated receipt to a block explorer.
+      explorerUrl: tx && this.network.explorerTx && !this.network.simulated ? `${this.network.explorerTx}${tx}` : undefined,
       amountAtomic: settle?.amount ?? req.amount,
+      delivery: delivery.status,
+      deliveryNote: delivery.status === "passed" ? undefined : delivery.reason,
     });
-    return { status: "settled", data, receipt, replayed: false };
+    return { status: "settled", data, receipt, replayed: false, delivery };
   }
 }
 

@@ -9,6 +9,11 @@ export interface PolicyConfig {
   dailyBudgetUsd: number;
   approvalThresholdUsd: number;
   allowedMerchants: string[]; // host[:port], lowercase
+  /**
+   * Optional payee pinning: host[:port] → the only address that merchant may be paid at.
+   * When a merchant has an entry here, a 402 asking for payment to any other address is denied.
+   */
+  merchantPayees?: Record<string, string>;
 }
 
 export interface PaymentIntent {
@@ -16,6 +21,7 @@ export interface PaymentIntent {
   network: string; // CAIP-2, e.g. eip155:84532
   asset: string; // token contract address
   amountAtomic: bigint;
+  payTo?: string; // payee address the merchant asked to be paid at
 }
 
 export interface PolicyContext {
@@ -31,6 +37,7 @@ export type PolicyDecision =
 
 export type PolicyRule =
   | "merchant_not_allowlisted"
+  | "payee_mismatch"
   | "wrong_network"
   | "unsupported_asset"
   | "invalid_amount"
@@ -41,6 +48,14 @@ export function evaluatePolicy(intent: PaymentIntent, cfg: PolicyConfig, ctx: Po
   const merchant = intent.merchant.toLowerCase();
   if (!cfg.allowedMerchants.includes(merchant)) {
     return { outcome: "deny", rule: "merchant_not_allowlisted", reason: `${merchant} is not on the merchant allowlist` };
+  }
+  const pinned = cfg.merchantPayees?.[merchant];
+  if (pinned !== undefined && intent.payTo?.toLowerCase() !== pinned.toLowerCase()) {
+    return {
+      outcome: "deny",
+      rule: "payee_mismatch",
+      reason: `${merchant} asked to be paid at ${intent.payTo ?? "(none)"}, but its registered payee is ${pinned}`,
+    };
   }
   if (intent.network !== ctx.expectedNetwork) {
     return { outcome: "deny", rule: "wrong_network", reason: `merchant asked for ${intent.network}, wallet pays on ${ctx.expectedNetwork}` };

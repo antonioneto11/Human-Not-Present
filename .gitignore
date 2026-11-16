@@ -1,3 +1,9 @@
 node_modules/
+# secrets
 .env
+.env.*
+!.env.example
+# ledgers, simulated wallets, experiment run artifacts
 data/
+*.jsonl
+sim-*.json

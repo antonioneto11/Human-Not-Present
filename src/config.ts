@@ -42,11 +42,20 @@ export function loadPolicyConfig() {
     maxPerTransactionUsd: usd("POLICY_MAX_PER_TX_USD", "1.00"),
     dailyBudgetUsd: usd("POLICY_DAILY_BUDGET_USD", "2.00"),
     approvalThresholdUsd: usd("POLICY_APPROVAL_THRESHOLD_USD", "0.10"),
-    allowedMerchants: env("POLICY_ALLOWED_MERCHANTS", "localhost:4021")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
+    ...parseAllowlist(env("POLICY_ALLOWED_MERCHANTS", "localhost:4021")),
   };
+}
+
+/** "host[:port]" or "host[:port]=0xPayee", comma-separated. */
+export function parseAllowlist(raw: string) {
+  const allowedMerchants: string[] = [];
+  const merchantPayees: Record<string, string> = {};
+  for (const item of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [host, payee] = item.split("=").map((s) => s.trim());
+    allowedMerchants.push(host.toLowerCase());
+    if (payee) merchantPayees[host.toLowerCase()] = payee;
+  }
+  return { allowedMerchants, merchantPayees };
 }
 
 export function loadAgentWalletKey(): Hex {
@@ -55,8 +64,6 @@ export function loadAgentWalletKey(): Hex {
 
 export function loadMerchantConfig() {
   return {
-    port: Number(env("MERCHANT_PORT", "4021")),
-    payTo: env("MERCHANT_PAY_TO") as Hex,
     facilitatorUrl: env("FACILITATOR_URL", "https://x402.org/facilitator"),
   };
 }

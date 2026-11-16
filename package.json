@@ -1,15 +1,16 @@
 {
-  "name": "agent-pay",
+  "name": "human-not-present",
   "version": "0.1.0",
   "private": true,
-  "description": "An AI agent that completes real payments over x402 under a spend-policy layer",
+  "description": "Simulated experiment: can a spend-policy layer replace the human \"confirm\" click for an AI purchasing agent? (x402, simulated settlement)",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "merchant": "tsx src/merchant/server.ts",
+    "experiment": "tsx src/experiment/run.ts",
     "agent": "tsx src/cli.ts",
+    "merchant": "tsx src/merchant/server.ts",
     "wallet:new": "tsx src/scripts/new-wallet.ts",
     "wallet:balance": "tsx src/scripts/balance.ts",
     "typecheck": "tsc --noEmit",

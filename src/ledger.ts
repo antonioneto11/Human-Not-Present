@@ -24,8 +24,11 @@ export interface LedgerEntry {
   network?: string;
   payTo?: string;
   policy?: string; // policy decision explanation
-  transaction?: string; // on-chain tx hash
-  explorerUrl?: string;
+  transaction?: string; // settlement reference: on-chain tx hash, or "sim_…" when simulated
+  explorerUrl?: string; // only for real on-chain settlement
+  simulated?: boolean; // true → settlement was simulated, no real funds moved
+  delivery?: "passed" | "failed" | "unchecked"; // code-side delivery check on paid data
+  deliveryNote?: string;
   error?: string;
 }
 
