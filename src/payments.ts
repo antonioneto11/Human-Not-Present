@@ -8,7 +8,7 @@ import type { Approver } from "./approval";
 import { checkDelivery, PRODUCT_SPECS, type DeliveryResult, type DeliverySpecs } from "./delivery";
 import type { Ledger, LedgerEntry } from "./ledger";
 import { atomicToUsd } from "./money";
-import { evaluatePolicy, type PolicyConfig } from "./policy";
+import { evaluatePolicy, resourceKey, type PolicyConfig } from "./policy";
 
 export interface NetworkInfo {
   caip2: string;
@@ -62,7 +62,12 @@ export class PaymentService {
   /** Probe a URL without paying. Returns the price if it's behind an x402 paywall. */
   async quote(url: string): Promise<Quote> {
     const merchant = new URL(url).host;
-    const res = await this.fetchImpl(url);
+    const res = await this.fetchImpl(url, { redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) {
+      // Policy checks the host in the URL. Following a redirect would let that host hand
+      // the payment to a different one, so redirects are refused outright.
+      throw new Error(`${url} redirected (HTTP ${res.status}); redirects are not followed for paid resources`);
+    }
     if (res.status !== 402) {
       return { url, merchant, free: true };
     }
@@ -108,7 +113,7 @@ export class PaymentService {
 
     const quote = await this.quote(url);
     if (quote.free || !quote.requirement || !quote.paymentRequired) {
-      const res = await this.fetchImpl(url);
+      const res = await this.fetchImpl(url, { redirect: "manual" });
       return { status: "free", data: await readBody(res) };
     }
     const req = quote.requirement;
@@ -126,9 +131,22 @@ export class PaymentService {
 
     // 1. Policy (deterministic, not up to the model)
     const decision = evaluatePolicy(
-      { merchant: quote.merchant, network: req.network, asset: req.asset, amountAtomic: BigInt(req.amount), payTo: req.payTo },
+      {
+        merchant: quote.merchant,
+        network: req.network,
+        asset: req.asset,
+        amountAtomic: BigInt(req.amount),
+        payTo: req.payTo,
+        resource: resourceKey(url),
+      },
       this.policy,
-      { expectedNetwork: this.network.caip2, expectedAsset: this.network.usdc, spentTodayAtomic: this.ledger.spentTodayAtomic() },
+      {
+        expectedNetwork: this.network.caip2,
+        expectedAsset: this.network.usdc,
+        spentTodayAtomic: this.ledger.spentTodayAtomic(),
+        spentThisTaskAtomic: this.ledger.spentForRunAtomic(this.runId),
+        boughtThisTask: this.ledger.countForRun(this.runId, (u) => resourceKey(u) === resourceKey(url)),
+      },
     );
     if (decision.outcome === "deny") {
       const receipt = this.ledger.append({ ...base, status: "denied", policy: `${decision.rule}: ${decision.reason}` });
@@ -151,7 +169,7 @@ export class PaymentService {
     // 4. Send and settle
     let res: Response;
     try {
-      res = await this.fetchImpl(url, { headers: this.http.encodePaymentSignatureHeader(payload) });
+      res = await this.fetchImpl(url, { headers: this.http.encodePaymentSignatureHeader(payload), redirect: "manual" });
     } catch (err) {
       // Network error after signing: outcome unknown. Leave it "authorized" so it
       // keeps counting against the budget and blocks a duplicate payment.

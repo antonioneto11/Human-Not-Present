@@ -50,3 +50,32 @@ test("unknown merchant, wrong chain, wrong token are all denied", () => {
   assert.equal(rule(intent(0.01, { asset: "0x0000000000000000000000000000000000000001" })), "unsupported_asset");
   assert.equal(rule(intent(0)), "invalid_amount");
 });
+
+// ---- Task mandate ----
+const mandated: PolicyConfig = {
+  ...cfg,
+  mandate: { items: [{ resource: "localhost:4021/api/weather", maxUsd: 0.05, maxQuantity: 1 }], maxTotalUsd: 0.1 },
+};
+const deny = (d: ReturnType<typeof evaluatePolicy>) => (d.outcome === "deny" ? d.rule : d.outcome);
+
+test("mandate: an allowlisted, in-limit purchase outside the mandate is denied", () => {
+  assert.equal(deny(evaluatePolicy(intent(0.01, { resource: "localhost:4021/api/addon" }), mandated, ctx)), "outside_mandate");
+  assert.equal(deny(evaluatePolicy(intent(0.01), mandated, ctx)), "outside_mandate", "no resource → not in mandate");
+});
+
+test("mandate: in-mandate purchase is allowed; above the item price is denied", () => {
+  assert.equal(evaluatePolicy(intent(0.05, { resource: "localhost:4021/api/weather" }), mandated, ctx).outcome, "allow");
+  assert.equal(deny(evaluatePolicy(intent(0.06, { resource: "localhost:4021/api/weather" }), mandated, ctx)), "over_mandate_price");
+});
+
+test("mandate: quantity and task total are enforced", () => {
+  const r = { resource: "localhost:4021/api/weather" };
+  assert.equal(deny(evaluatePolicy(intent(0.01, r), mandated, { ...ctx, boughtThisTask: 1 })), "mandate_quantity");
+  assert.equal(deny(evaluatePolicy(intent(0.05, r), mandated, { ...ctx, spentThisTaskAtomic: usdToAtomic(0.06) })), "mandate_total");
+});
+
+test("mandate does not loosen the base policy: allowlist and cap still apply", () => {
+  const wide: PolicyConfig = { ...cfg, mandate: { items: [{ resource: "evil.test/x", maxUsd: 100 }, { resource: "localhost:4021/big", maxUsd: 100 }], maxTotalUsd: 100 } };
+  assert.equal(deny(evaluatePolicy(intent(0.01, { merchant: "evil.test", resource: "evil.test/x" }), wide, ctx)), "merchant_not_allowlisted");
+  assert.equal(deny(evaluatePolicy(intent(5, { resource: "localhost:4021/big" }), wide, ctx)), "per_transaction_cap");
+});

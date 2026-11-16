@@ -14,6 +14,25 @@ export interface PolicyConfig {
    * When a merchant has an entry here, a 402 asking for payment to any other address is denied.
    */
   merchantPayees?: Record<string, string>;
+  /**
+   * Optional task mandate: what THIS task may buy, declared by the person who set the task
+   * (never by the model). When present, anything outside it is denied, even from an
+   * allowlisted merchant at its registered payee and within every other limit.
+   */
+  mandate?: TaskMandate;
+}
+
+/** A purchase order for one task: which resources, at most how much each, at most how much in total. */
+export interface TaskMandate {
+  // resource = "host[:port]/path", query ignored. maxQuantity: how many times this task may buy it (unlimited if absent).
+  items: { resource: string; maxUsd: number; maxQuantity?: number }[];
+  maxTotalUsd: number;
+}
+
+/** "host[:port]/path" for a URL, lowercased host, no query. This is what a mandate item names. */
+export function resourceKey(url: string): string {
+  const u = new URL(url);
+  return `${u.host.toLowerCase()}${u.pathname}`;
 }
 
 export interface PaymentIntent {
@@ -22,12 +41,15 @@ export interface PaymentIntent {
   asset: string; // token contract address
   amountAtomic: bigint;
   payTo?: string; // payee address the merchant asked to be paid at
+  resource?: string; // resourceKey() of what is being bought; required when a mandate is set
 }
 
 export interface PolicyContext {
   expectedNetwork: string;
   expectedAsset: string;
   spentTodayAtomic: bigint; // settled + in-flight spend since 00:00 UTC
+  spentThisTaskAtomic?: bigint; // settled + in-flight spend in this run; used by the mandate total
+  boughtThisTask?: number; // settled + in-flight purchases of this same resource in this run
 }
 
 export type PolicyDecision =
@@ -42,12 +64,20 @@ export type PolicyRule =
   | "unsupported_asset"
   | "invalid_amount"
   | "per_transaction_cap"
-  | "daily_budget";
+  | "daily_budget"
+  | "outside_mandate"
+  | "over_mandate_price"
+  | "mandate_total"
+  | "mandate_quantity";
 
 export function evaluatePolicy(intent: PaymentIntent, cfg: PolicyConfig, ctx: PolicyContext): PolicyDecision {
   const merchant = intent.merchant.toLowerCase();
   if (!cfg.allowedMerchants.includes(merchant)) {
     return { outcome: "deny", rule: "merchant_not_allowlisted", reason: `${merchant} is not on the merchant allowlist` };
+  }
+  const mandateItem = cfg.mandate ? cfg.mandate.items.find((i) => i.resource.toLowerCase() === (intent.resource ?? "").toLowerCase()) : undefined;
+  if (cfg.mandate && !mandateItem) {
+    return { outcome: "deny", rule: "outside_mandate", reason: `${intent.resource ?? "(unknown resource)"} is not part of this task's mandate` };
   }
   const pinned = cfg.merchantPayees?.[merchant];
   if (pinned !== undefined && intent.payTo?.toLowerCase() !== pinned.toLowerCase()) {
@@ -74,6 +104,33 @@ export function evaluatePolicy(intent: PaymentIntent, cfg: PolicyConfig, ctx: Po
       rule: "per_transaction_cap",
       reason: `${atomicToUsd(intent.amountAtomic)} exceeds the per-transaction cap of ${atomicToUsd(cap)}`,
     };
+  }
+
+  if (cfg.mandate && mandateItem) {
+    const itemMax = usdToAtomic(mandateItem.maxUsd);
+    if (intent.amountAtomic > itemMax) {
+      return {
+        outcome: "deny",
+        rule: "over_mandate_price",
+        reason: `${atomicToUsd(intent.amountAtomic)} is above the mandate's ${atomicToUsd(itemMax)} for ${mandateItem.resource}`,
+      };
+    }
+    if (mandateItem.maxQuantity !== undefined && (ctx.boughtThisTask ?? 0) >= mandateItem.maxQuantity) {
+      return {
+        outcome: "deny",
+        rule: "mandate_quantity",
+        reason: `this task may buy ${mandateItem.resource} at most ${mandateItem.maxQuantity} time(s)`,
+      };
+    }
+    const total = usdToAtomic(cfg.mandate.maxTotalUsd);
+    const spent = ctx.spentThisTaskAtomic ?? 0n;
+    if (spent + intent.amountAtomic > total) {
+      return {
+        outcome: "deny",
+        rule: "mandate_total",
+        reason: `${atomicToUsd(intent.amountAtomic)} would take this task past its mandate total of ${atomicToUsd(total)} (spent ${atomicToUsd(spent)})`,
+      };
+    }
   }
 
   const budget = usdToAtomic(cfg.dailyBudgetUsd);

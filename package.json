@@ -14,7 +14,8 @@
     "wallet:new": "tsx src/scripts/new-wallet.ts",
     "wallet:balance": "tsx src/scripts/balance.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "attacks": "tsx src/attacks/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

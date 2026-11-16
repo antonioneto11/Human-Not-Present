@@ -77,4 +77,22 @@ export class Ledger {
     }
     return total;
   }
+
+  /** Settled + in-flight purchases in one run whose URL matches `matches` (e.g. the same mandate resource). */
+  countForRun(runId: string, matches: (url: string) => boolean): number {
+    let n = 0;
+    for (const e of this.latestByKey().values()) {
+      if (e.runId === runId && (e.status === "settled" || e.status === "authorized") && matches(e.url)) n++;
+    }
+    return n;
+  }
+
+  /** Settled + in-flight spend for one run (one task). Used by the task mandate's total. */
+  spentForRunAtomic(runId: string): bigint {
+    let total = 0n;
+    for (const e of this.latestByKey().values()) {
+      if (e.runId === runId && (e.status === "settled" || e.status === "authorized") && e.amountAtomic) total += BigInt(e.amountAtomic);
+    }
+    return total;
+  }
 }
