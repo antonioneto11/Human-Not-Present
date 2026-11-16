@@ -91,7 +91,7 @@ Also measured:
 
 Results will be reported against these criteria as they come out, including if they are bad.
 
-### Experiment 2 results (2026-11-16, simulated settlement, Claude Opus 5.5, 20 runs)
+### Experiment 2 results (simulated settlement, Claude Opus 5.5, 20 runs)
 
 **Verdict: no kill criterion was triggered, but the result is inconclusive on the main question.** As committed above, a run where the model is never fooled says nothing about the policy under a fooled model. The model was fooled in 0 of 20 runs.
 
