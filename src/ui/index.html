@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human Not Present</title>
+<style>
+:root {
+  --bg: #f6f6f3; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e3e2dc;
+  --accent: #2f5bd3; --accent-ink: #fff;
+  --ok: #1f7a4d; --ok-bg: #e3f3ea; --bad: #b42318; --bad-bg: #fde8e6; --warn: #8a5a00; --warn-bg: #fdf1d8;
+  --info-bg: #e8eefc; --code: #f0efea;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413; --panel: #1d1d1b; --ink: #ecebe6; --muted: #9b9a94; --line: #33332f;
+    --accent: #7c9cff; --accent-ink: #0e1220;
+    --ok: #5cc98f; --ok-bg: #16301f; --bad: #ff8a7d; --bad-bg: #3a1a17; --warn: #f0c060; --warn-bg: #352a12;
+    --info-bg: #1c2540; --code: #262623;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0; letter-spacing: -0.01em; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--code); color: var(--muted); }
+.b-ok { background: var(--ok-bg); color: var(--ok); } .b-bad { background: var(--bad-bg); color: var(--bad); }
+.b-warn { background: var(--warn-bg); color: var(--warn); } .b-info { background: var(--info-bg); color: var(--accent); }
+.stat { color: var(--muted); font-size: 13px; } .stat b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.spacer { flex: 1; }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--bad); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 12px; color: var(--muted); }
+.tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+.grid { display: grid; grid-template-columns: minmax(340px, 440px) 1fr; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 16px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+label { display: block; font-size: 13px; color: var(--muted); }
+textarea, input[type=number], select { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+textarea { min-height: 120px; resize: vertical; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--ink); margin: 6px 0; }
+.merchant { border-top: 1px solid var(--line); padding: 10px 0; }
+.merchant:first-of-type { border-top: none; }
+.merchant .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.product { display: grid; grid-template-columns: auto 1fr 74px 54px; gap: 8px; align-items: center; margin: 6px 0 0 24px; font-size: 13px; }
+.product input[type=number] { padding: 3px 6px; }
+.product .desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mandate-off .product input { opacity: .4; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+.feed { display: flex; flex-direction: column; gap: 8px; }
+.ev { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--panel); }
+.ev .t { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ev code, td code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+.ev .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.ev.inject { border-color: var(--bad); }
+.ev.approval { border: 2px solid var(--accent); background: var(--info-bg); }
+.ev.approval .actions { display: flex; gap: 8px; margin-top: 10px; }
+.answer { white-space: pre-wrap; }
+.empty { color: var(--muted); text-align: center; padding: 30px 10px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none !important; }
+.matrix td { white-space: nowrap; }
+.matrix td.name { white-space: normal; }
+.small { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Human Not Present</h1>
+  <span class="badge b-warn">SIMULATED settlement · no real money</span>
+  <span class="stat">Balance <b id="balance">–</b></span>
+  <span class="stat">Spent today <b id="spent">–</b></span>
+  <span class="stat">Wallet <code id="address">–</code></span>
+  <span class="spacer"></span>
+  <span class="stat" id="model"></span>
+  <button class="danger" id="reset" title="New wallet with $5.00, empty ledger">Reset wallet</button>
+</header>
+<nav class="tabs">
+  <button class="active" data-tab="agent">Agent</button>
+  <button data-tab="attacks">Attack suite</button>
+</nav>
+
+<main>
+  <section id="tab-agent" class="grid">
+    <div>
+      <div class="card">
+        <h2>Task</h2>
+        <textarea id="task"></textarea>
+        <p class="hint" id="keywarn"></p>
+      </div>
+
+      <div class="card">
+        <h2>Spend policy</h2>
+        <div class="row3">
+          <label>Per-payment cap ($)<input type="number" id="cap" step="0.01" min="0" value="1.00"></label>
+          <label>Daily budget ($)<input type="number" id="budget" step="0.01" min="0" value="2.00"></label>
+          <label>Ask a human above ($)<input type="number" id="threshold" step="0.01" min="0" value="0.10"></label>
+        </div>
+        <label>When approval is needed
+          <select id="approvals">
+            <option value="ask">Ask me in this page</option>
+            <option value="always_no">Nobody's here: decline</option>
+            <option value="always_yes">Approve everything (rubber stamp)</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="pin" checked> Pin each merchant to its registered payee address</label>
+      </div>
+
+      <div class="card" id="merchants-card">
+        <h2>Merchants &amp; task mandate</h2>
+        <label class="check"><input type="checkbox" id="mandate-on" checked> <b>Task mandate on</b>: the agent may buy only the ticked products</label>
+        <div class="row3" style="grid-template-columns: 1fr 1fr;">
+          <label>Mandate total for this task ($)<input type="number" id="mandate-total" step="0.01" min="0" value="0.25"></label>
+          <span></span>
+        </div>
+        <p class="hint">Merchant checkbox = allowlist. Product checkbox = in the mandate, with max price and how many times.</p>
+        <div id="merchants"></div>
+      </div>
+
+      <button class="primary" id="run" style="width:100%; padding:10px;">Run agent</button>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Live <span id="running" class="hidden"><span class="spin"></span></span></h2>
+        <div id="feed" class="feed"><div class="empty">Set things up on the left and press <b>Run agent</b>.</div></div>
+      </div>
+      <div class="card">
+        <h2>Audit ledger</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th><th>Status</th><th>Resource</th><th>Amount</th><th>Why / policy</th></tr></thead>
+          <tbody id="ledger"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-attacks" class="hidden">
+    <div class="card">
+      <h2>Scripted attack suite</h2>
+      <p>A compromised agent calls the payment layer directly with hostile requests, so the policy is tested without a model.
+        Each attack runs under four setups from a fresh wallet. No API calls, no real money, a few seconds.</p>
+      <button class="primary" id="run-attacks">Run attack suite</button>
+      <span id="attack-status" class="small"></span>
+    </div>
+    <div class="card hidden" id="attack-results">
+      <h2>Results</h2>
+      <p class="small">✅ = no money left beyond what the task needed. ❌ = money moved that shouldn't have. Amounts are what actually settled.</p>
+      <div class="table-wrap"><table class="matrix" id="matrix"></table></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const usd = (atomic) => atomic == null ? "" : "$" + (Number(atomic) / 1e6).toFixed(Number(atomic) % 10000 ? 4 : 2);
+const shortPath = (url) => { try { const u = new URL(url); return u.host + u.pathname + u.search; } catch { return url; } };
+const roleBadge = { honest: ["honest", "b-ok"], bad_delivery: ["bad delivery", "b-warn"], hostile: ["hostile", "b-bad"], unlisted: ["honest, unlisted", "b-info"] };
+
+// Tabs
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  $("tab-agent").classList.toggle("hidden", b.dataset.tab !== "agent");
+  $("tab-attacks").classList.toggle("hidden", b.dataset.tab !== "attacks");
+});
+
+// ---- Setup forms ----
+let merchants = [];
+const NEEDED = ["/api/weather", "/api/fx-rates", "/api/market-brief", "/api/shipping-rates"];
+async function loadCatalog() {
+  const r = await (await fetch("/api/catalog")).json();
+  merchants = r.merchants;
+  $("task").value = r.defaultTask;
+  $("merchants").innerHTML = merchants.map((m, i) => `
+    <div class="merchant">
+      <div class="head">
+        <label class="check" style="margin:0"><input type="checkbox" class="allow" data-host="${m.host}" ${m.role !== "unlisted" ? "checked" : ""}> <b>${esc(m.name)}</b></label>
+        <span class="badge ${roleBadge[m.role][1]}">${roleBadge[m.role][0]}</span>
+        ${m.hasInjection ? '<span class="badge b-bad" title="Its catalog contains instructions aimed at the agent">prompt injection</span>' : ""}
+        <span class="small">${m.host}</span>
+      </div>
+      ${m.products.map((p) => `
+        <div class="product">
+          <input type="checkbox" class="mitem" data-resource="${p.resource}" ${NEEDED.includes(p.path) ? "checked" : ""} title="In the mandate">
+          <span class="desc" title="${esc(p.description)}"><code>${p.path}</code> $${p.priceUsd.toFixed(2)} ${p.payTo !== m.payTo ? '<span class="badge b-bad">other payee</span>' : ""}</span>
+          <input type="number" class="mmax" data-resource="${p.resource}" step="0.01" min="0" value="${Math.max(0.05, p.priceUsd).toFixed(2)}" title="Max price in the mandate">
+          <input type="number" class="mqty" data-resource="${p.resource}" step="1" min="1" value="1" title="Max quantity">
+        </div>`).join("")}
+    </div>`).join("");
+}
+$("mandate-on").onchange = () => $("merchants-card").classList.toggle("mandate-off", !$("mandate-on").checked);
+
+function settings() {
+  const items = [...document.querySelectorAll(".mitem:checked")].map((c) => {
+    const r = c.dataset.resource;
+    return {
+      resource: r,
+      maxUsd: Number(document.querySelector(`.mmax[data-resource="${r}"]`).value),
+      maxQuantity: Number(document.querySelector(`.mqty[data-resource="${r}"]`).value),
+    };
+  });
+  return {
+    task: $("task").value,
+    maxPerTransactionUsd: Number($("cap").value),
+    dailyBudgetUsd: Number($("budget").value),
+    approvalThresholdUsd: Number($("threshold").value),
+    approvals: $("approvals").value,
+    pinPayees: $("pin").checked,
+    allowlist: [...document.querySelectorAll(".allow:checked")].map((c) => c.dataset.host),
+    mandate: $("mandate-on").checked ? { items, maxTotalUsd: Number($("mandate-total").value) } : null,
+  };
+}
+
+// ---- State: header + ledger ----
+function renderState(s) {
+  $("balance").textContent = s.balance;
+  $("spent").textContent = s.spentToday;
+  $("address").textContent = s.address.slice(0, 6) + "…" + s.address.slice(-4);
+  $("model").textContent = s.model;
+  $("run").disabled = s.running;
+  $("reset").disabled = s.running;
+  $("running").classList.toggle("hidden", !s.running);
+  $("keywarn").textContent = s.hasApiKey ? "Each run calls the Claude API (about 12k tokens)." : "⚠️ ANTHROPIC_API_KEY is not set in .env: agent runs will fail. The attack suite still works.";
+  const statusBadge = { settled: "b-ok", denied: "b-bad", declined: "b-warn", failed: "b-bad", authorized: "b-info" };
+  $("ledger").innerHTML = s.ledger.slice().reverse().map((e) => `
+    <tr>
+      <td class="num">${new Date(e.ts).toLocaleTimeString()}</td>
+      <td><span class="badge ${statusBadge[e.status] ?? ""}">${e.status}</span>${e.delivery === "failed" ? ' <span class="badge b-warn">bad data</span>' : ""}</td>
+      <td><code>${esc(shortPath(e.url))}</code></td>
+      <td class="num">${usd(e.amountAtomic)}</td>
+      <td>${esc(e.policy ?? e.deliveryNote ?? e.error ?? "")}<div class="small">${esc(e.reason)}</div></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="empty">No payments yet.</td></tr>`;
+}
+async function refresh() { renderState(await (await fetch("/api/state")).json()); }
+
+// ---- Live feed ----
+const feed = $("feed");
+function add(html, cls = "") {
+  if (feed.querySelector(".empty")) feed.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "ev " + cls;
+  d.innerHTML = html;
+  feed.appendChild(d);
+  d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return d;
+}
+function renderTrace(e) {
+  const out = e.output ?? {};
+  if (e.tool === "list_catalog") {
+    const inj = out.notice;
+    add(`<div class="t">🔎 <b>Catalog</b> <code>${esc(e.input.base_url)}</code> ${out.merchant ? esc(out.merchant) : ""}
+      ${inj ? '<span class="badge b-bad">contains instructions for the agent</span>' : ""}</div>
+      ${inj ? `<div class="sub">“${esc(inj)}”</div>` : ""}
+      ${out.error ? `<div class="sub">${esc(out.error)}</div>` : ""}`, inj ? "inject" : "");
+  } else if (e.tool === "get_quote") {
+    add(`<div class="t">🏷️ <b>Quote</b> <code>${esc(shortPath(e.input.url))}</code> ${out.free ? "free" : `<b>${esc(out.price ?? "")}</b>`} ${out.error ? `<span class="badge b-bad">${esc(out.error)}</span>` : ""}</div>`);
+  } else if (e.tool === "wallet_status") {
+    add(`<div class="t">👛 <b>Wallet check</b> <span class="small">balance ${esc(out.balance)}, ${esc(out.remainingToday)} left today</span></div>`);
+  } else if (e.tool === "purchase") {
+    const st = out.status;
+    const cls = { settled: "b-ok", denied: "b-bad", declined: "b-warn", failed: "b-bad", error: "b-bad", free: "b-info" }[st] ?? "";
+    const delivery = out.deliveryCheck && out.deliveryCheck !== "passed" ? `<div class="sub">⚠️ Delivery check: ${esc(out.deliveryCheck)}</div>` : "";
+    add(`<div class="t">💸 <b>Purchase</b> <code>${esc(shortPath(e.input.url))}</code> <span class="badge ${cls}">${esc(st)}</span> ${out.amount ? `<b>${esc(out.amount)}</b>` : ""}</div>
+      <div class="sub">Agent's reason: ${esc(e.input.reason)}</div>
+      ${out.message ? `<div class="sub">${esc(out.message)}</div>` : ""}${delivery}`);
+  }
+}
+
+const approvalCards = new Map();
+const es = new EventSource("/api/events");
+es.addEventListener("state", (m) => renderState(JSON.parse(m.data)));
+es.addEventListener("run_start", (m) => {
+  const d = JSON.parse(m.data);
+  feed.innerHTML = "";
+  add(`<div class="t">📋 <b>Task started</b> <span class="small">${d.policy.mandate ? `mandate: ${d.policy.mandate.items.length} item(s), $${d.policy.mandate.maxTotalUsd} total` : "no mandate"}</span></div>`);
+  refresh();
+});
+es.addEventListener("trace", (m) => renderTrace(JSON.parse(m.data)));
+es.addEventListener("approval", (m) => {
+  const a = JSON.parse(m.data);
+  const card = add(`<div class="t">💳 <b>Approval needed</b> <b>${esc(a.amountUsd)}</b> to <code>${esc(a.merchant)}</code></div>
+    <div class="sub"><code>${esc(shortPath(a.url))}</code></div>
+    <div class="sub">Agent's reason: ${esc(a.reason)}</div>
+    <div class="sub">Policy: ${esc(a.policyNote)}</div>
+    <div class="actions"><button class="primary" data-ok="1">Approve</button><button data-ok="0">Decline</button></div>`, "approval");
+  card.querySelectorAll("button").forEach((b) => b.onclick = () =>
+    fetch("/api/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: a.id, ok: b.dataset.ok === "1" }) }));
+  approvalCards.set(a.id, card);
+});
+es.addEventListener("approval_closed", (m) => {
+  const a = JSON.parse(m.data);
+  const card = approvalCards.get(a.id);
+  if (card) card.querySelector(".actions").innerHTML = `<span class="badge ${a.ok ? "b-ok" : "b-warn"}">${a.ok ? "approved" : "declined"}${a.why ? ` (${esc(a.why)})` : ""}</span>`;
+});
+es.addEventListener("run_end", (m) => {
+  const d = JSON.parse(m.data);
+  if (d.error) add(`<div class="t">⛔ <b>Run failed</b></div><div class="sub">${esc(d.error)}</div>`, "inject");
+  else add(`<div class="t">✅ <b>Agent's answer</b> <span class="small">${d.usage.inputTokens + d.usage.outputTokens} tokens</span></div><div class="answer sub" style="color:var(--ink)">${esc(d.answer)}</div>`);
+  refresh();
+});
+
+$("run").onclick = async () => {
+  const r = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(settings()) });
+  if (!r.ok) alert((await r.json()).error);
+};
+$("reset").onclick = async () => {
+  if (!confirm("New simulated wallet with $5.00 and an empty ledger?")) return;
+  await fetch("/api/reset", { method: "POST" });
+  feed.innerHTML = '<div class="empty">Wallet reset.</div>';
+};
+
+// ---- Attack suite ----
+$("run-attacks").onclick = async () => {
+  $("run-attacks").disabled = true;
+  $("attack-status").innerHTML = ' <span class="spin"></span> running…';
+  const r = await (await fetch("/api/attacks", { method: "POST" })).json();
+  $("run-attacks").disabled = false;
+  const bad = (s) => r.results.filter((x) => x.setup === s && x.bad).length;
+  $("attack-status").textContent = " " + r.setups.map((s) => `${s.short}: ${bad(s.id)}/${r.attacks.length} bad`).join(" · ");
+  const cell = (x) => {
+    const amt = BigInt(x.settledAtomic) > 0n ? " " + usd(x.settledAtomic) : "";
+    return `<td title="${esc((x.badDetails.join("; ") || "") + (x.stoppedBy.length ? " · stopped by: " + x.stoppedBy.join(", ") : ""))}">
+      <span class="badge ${x.bad ? "b-bad" : "b-ok"}">${x.bad ? "❌" : "✅"}${amt}</span>
+      <div class="small">${esc(x.stoppedBy.join(", "))}</div></td>`;
+  };
+  $("matrix").innerHTML = `<thead><tr><th>Attack</th>${r.setups.map((s) => `<th>${esc(s.label)}</th>`).join("")}</tr></thead>
+    <tbody>${r.attacks.map((a) => `<tr><td class="name"><b>${esc(a.name)}</b><div class="small">${esc(a.description)}</div></td>
+      ${r.setups.map((s) => cell(r.results.find((x) => x.attack === a.id && x.setup === s.id))).join("")}</tr>`).join("")}</tbody>`;
+  $("attack-results").classList.remove("hidden");
+};
+
+loadCatalog().then(refresh);
+</script>
+</body>
+</html>

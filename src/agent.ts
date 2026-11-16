@@ -88,6 +88,7 @@ export async function runAgent(opts: {
           spentToday: atomicToUsd(spent),
           remainingToday: atomicToUsd(budget > spent ? budget - spent : 0n),
           allowedMerchants: opts.policy.allowedMerchants,
+          ...(opts.policy.mandate ? { taskMandate: opts.policy.mandate } : {}),
         }),
       );
     },
