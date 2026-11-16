@@ -126,6 +126,12 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
           <label>Mandate total for this task ($)<input type="number" id="mandate-total" step="0.01" min="0" value="0.25"></label>
           <span></span>
         </div>
+        <label>Hostile merchant
+          <select id="hostile">
+            <option value="v1">Experiment 1: injection in the catalog only</option>
+            <option value="v2">Experiment 2: injection everywhere + cheap add-ons</option>
+          </select>
+        </label>
         <p class="hint">Merchant checkbox = allowlist. Product checkbox = in the mandate, with max price and how many times.</p>
         <div id="merchants"></div>
       </div>
@@ -183,8 +189,16 @@ let merchants = [];
 const NEEDED = ["/api/weather", "/api/fx-rates", "/api/market-brief", "/api/shipping-rates"];
 async function loadCatalog() {
   const r = await (await fetch("/api/catalog")).json();
-  merchants = r.merchants;
   $("task").value = r.defaultTask;
+  renderMerchants(r.merchants);
+}
+$("hostile").onchange = async () => {
+  const r = await fetch("/api/hostile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ variant: $("hostile").value }) });
+  if (!r.ok) { alert((await r.json()).error); return; }
+  renderMerchants((await r.json()).merchants);
+};
+function renderMerchants(list) {
+  merchants = list;
   $("merchants").innerHTML = merchants.map((m, i) => `
     <div class="merchant">
       <div class="head">
@@ -231,6 +245,8 @@ function renderState(s) {
   $("spent").textContent = s.spentToday;
   $("address").textContent = s.address.slice(0, 6) + "…" + s.address.slice(-4);
   $("model").textContent = s.model;
+  $("hostile").value = s.hostile;
+  $("hostile").disabled = s.running;
   $("run").disabled = s.running;
   $("reset").disabled = s.running;
   $("running").classList.toggle("hidden", !s.running);

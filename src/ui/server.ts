@@ -18,7 +18,7 @@ import { MODEL, runAgent } from "../agent";
 import type { Approver, ApprovalRequest } from "../approval";
 import { TASK } from "../experiment/scenario";
 import { Ledger } from "../ledger";
-import { MERCHANTS, startAllMerchants } from "../merchant/merchants";
+import { merchantsFor, startAllMerchants, type HostileVariant } from "../merchant/merchants";
 import { atomicToUsd, usdToAtomic } from "../money";
 import { PaymentService } from "../payments";
 import type { PolicyConfig, TaskMandate } from "../policy";
@@ -31,7 +31,9 @@ const STARTING_BALANCE = usdToAtomic(5);
 
 // ---- Simulated world: merchants + one wallet, reset on demand ----
 const facilitator = new SimulatedFacilitator(SIM_NETWORK.caip2, SIM_NETWORK.chainId);
-const servers = await startAllMerchants(facilitator, SIM_NETWORK.caip2);
+let hostile: HostileVariant = "v1";
+let servers = await startAllMerchants(facilitator, SIM_NETWORK.caip2, hostile);
+const MERCHANTS = () => merchantsFor(hostile);
 
 let key = generatePrivateKey();
 let address = privateKeyToAccount(key).address;
@@ -78,7 +80,7 @@ const pageApprover: Approver = (req: ApprovalRequest) =>
 // ---- What the page needs to draw its forms ----
 const priceUsd = (p: string) => Number(p.replace("$", ""));
 function catalog() {
-  return MERCHANTS.map((m) => ({
+  return MERCHANTS().map((m) => ({
     role: m.role,
     name: m.name,
     host: `localhost:${m.port}`,
@@ -126,6 +128,7 @@ const state = () => ({
   running: currentRun !== null,
   model: MODEL,
   hasApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+  hostile,
 });
 
 // ---- HTTP ----
@@ -196,6 +199,16 @@ app.post("/api/reset", (_req, res) => {
   res.json(state());
 });
 
+app.post("/api/hostile", async (req, res) => {
+  if (currentRun) return res.status(409).json({ error: "wait for the run to finish" });
+  const v = (req.body as { variant?: string }).variant;
+  if (v !== "v1" && v !== "v2") return res.status(400).json({ error: "variant must be v1 or v2" });
+  await Promise.all(servers.map((s) => new Promise((r) => s.close(() => r(null)))));
+  hostile = v;
+  servers = await startAllMerchants(facilitator, SIM_NETWORK.caip2, hostile);
+  res.json({ merchants: catalog() });
+});
+
 app.post("/api/attacks", async (_req, res) => {
   const results = await runSuite();
   res.json({ setups: SETUPS, attacks: ATTACKS.map(({ id, name, description }) => ({ id, name, description })), results });
@@ -203,7 +216,7 @@ app.post("/api/attacks", async (_req, res) => {
 
 const httpServer = app.listen(PORT, () => {
   console.log(`\n  Human Not Present playground → http://localhost:${PORT}`);
-  console.log(`  Merchants on ports ${MERCHANTS.map((m) => m.port).join(", ")} · settlement SIMULATED · model ${MODEL}`);
+  console.log(`  Merchants on ports ${MERCHANTS().map((m) => m.port).join(", ")} · settlement SIMULATED · model ${MODEL}`);
   if (!process.env.ANTHROPIC_API_KEY) console.log("  ⚠️  ANTHROPIC_API_KEY is not set: agent runs will fail; the attack suite still works.");
 });
 
