@@ -163,6 +163,18 @@ The demo merchant's prices are chosen to exercise every branch: $0.001 and $0.01
 
 ## Run it
 
+**Playground UI (simulated, no wallet needed):** `npm run ui`, then open http://localhost:4000. From the page you can:
+- Set the policy and the task mandate, and switch between the v1 and v2 hostile merchant.
+- Run the agent and approve or decline its payments.
+- Watch the audit ledger.
+- Run the attack suite.
+
+Agent runs need `ANTHROPIC_API_KEY`. The attack suite doesn't.
+
+**Attack suite (no model, no API cost):** `npm run attacks`
+
+**Experiments:** `npm run experiment` (experiment 1), `npm run experiment -- --hostile v2 --mandate on` (experiment 2). Stop the UI first, because they use the same merchant ports.
+
 ```bash
 npm install
 cp .env.example .env
@@ -200,7 +212,10 @@ The tests cover the policy rules and the full payment pipeline against an in-mem
 src/
   agent.ts            Claude agent (tool runner): list_catalog, wallet_status, get_quote, purchase
   payments.ts         quote → idempotency → policy → approval → sign → settle → ledger
-  policy.ts           pure, deterministic spend rules
+  policy.ts           pure, deterministic spend rules, incl. the optional task mandate
+  attacks/            scripted attack suite: programmable hostile merchant + 14 attacks × 4 setups
+  ui/                 local playground (npm run ui)
+  experiment/         experiment runner + scoring
   ledger.ts           append-only JSONL audit log + budget accounting
   approval.ts         human-in-the-loop gate
   merchant/server.ts  demo x402 merchant (Express + @x402/express)
