@@ -41,6 +41,8 @@ export async function runAgent(opts: {
   balance?: () => string;
   onEvent?: (line: string) => void;
   onTrace?: (e: TraceEvent) => void;
+  /** What the model says between tool calls, in its own words. */
+  onText?: (text: string) => void;
 }): Promise<{ answer: string; stopReason: string | null; usage: AgentUsage }> {
   const log = opts.onEvent ?? ((l: string) => console.log(l));
   const trace = (tool: string, input: unknown, output: string) => {
@@ -187,6 +189,14 @@ export async function runAgent(opts: {
   let final: Anthropic.Beta.BetaMessage | undefined;
   for await (const message of runner) {
     final = message;
+    if (opts.onText && message.stop_reason === "tool_use") {
+      const text = message.content
+        .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
+        .map((b) => b.text.trim())
+        .filter(Boolean)
+        .join("\n");
+      if (text) opts.onText(text);
+    }
     usage.requests++;
     usage.inputTokens += message.usage.input_tokens;
     usage.outputTokens += message.usage.output_tokens;

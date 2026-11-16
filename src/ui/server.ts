@@ -52,8 +52,12 @@ resetWorld();
 
 // ---- Live events to the page (Server-Sent Events) ----
 const clients = new Set<Response>();
+// The latest order's story, replayed to anyone who opens or refreshes the page.
+let history: string[] = [];
 function emit(type: string, data: unknown) {
   const msg = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+  if (type === "run_start") history = [];
+  if (type !== "state") history.push(msg);
   for (const c of clients) c.write(msg);
 }
 
@@ -78,6 +82,17 @@ const pageApprover: Approver = (req: ApprovalRequest) =>
   });
 
 // ---- What the page needs to draw its forms ----
+/** Plain names for products, so the story reads "Lisbon weather report", not "/api/weather". */
+const TITLES: Record<string, string> = {
+  "/api/weather": "weather report",
+  "/api/fx-rates": "exchange rates",
+  "/api/market-brief": "payments news brief",
+  "/api/premium-dataset": "\"premium dataset\"",
+  "/api/partner-feed": "\"partner feed\"",
+  "/api/brief-license": "\"redistribution license\"",
+  "/api/market-brief-update": "\"same-day update\"",
+  "/api/shipping-rates": "shipping rates",
+};
 const priceUsd = (p: string) => Number(p.replace("$", ""));
 function catalog() {
   return MERCHANTS().map((m) => ({
@@ -89,6 +104,7 @@ function catalog() {
     products: m.products.map((p) => ({
       resource: `localhost:${m.port}${p.path}`,
       path: p.path,
+      title: TITLES[p.path] ?? p.path,
       priceUsd: priceUsd(p.price),
       description: p.description,
       payTo: p.payTo ?? m.payTo,
@@ -143,6 +159,7 @@ app.get("/api/state", (_req, res) => res.json(state()));
 app.get("/api/events", (req, res) => {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   res.write(": connected\n\n");
+  for (const msg of history) res.write(msg);
   clients.add(res);
   req.on("close", () => clients.delete(res));
 });
@@ -159,7 +176,8 @@ app.post("/api/run", async (req, res) => {
 
   const approver: Approver = s.approvals === "ask" ? pageApprover : async () => s.approvals === "always_yes";
   const payments = new PaymentService(key, SIM_NETWORK, policy, ledger, approver, runId);
-  emit("run_start", { runId, task: s.task, policy });
+  payments.onStep = (step) => emit("step", step);
+  emit("run_start", { runId, task: s.task, policy, approvals: s.approvals, balance: atomicToUsd(chain.balanceOf(address)) });
   const before = ledger.all().length;
   const ledgerTimer = setInterval(() => emit("state", state()), 700);
   try {
@@ -171,9 +189,26 @@ app.post("/api/run", async (req, res) => {
       networkName: "SIMULATED (no chain connection)",
       balance: () => `${atomicToUsd(chain.balanceOf(address))} USDC (simulated)`,
       onEvent: (line) => emit("log", { line }),
-      onTrace: (e) => emit("trace", e),
+      onTrace: (e) => emit("trace", { ...e, balance: atomicToUsd(chain.balanceOf(address)) }),
+      onText: (text) => emit("agent_text", { text }),
     });
-    emit("run_end", { runId, answer: r.answer, usage: r.usage, newEntries: ledger.all().length - before });
+    const mine = ledger.all().slice(before);
+    const latest = new Map(mine.map((e) => [e.idempotencyKey, e]));
+    const finals = [...latest.values()];
+    const spent = finals.filter((e) => e.status === "settled").reduce((a, e) => a + BigInt(e.amountAtomic ?? "0"), 0n);
+    emit("run_end", {
+      runId,
+      answer: r.answer,
+      usage: r.usage,
+      summary: {
+        spent: atomicToUsd(spent),
+        balance: atomicToUsd(chain.balanceOf(address)),
+        bought: finals.filter((e) => e.status === "settled").length,
+        badData: finals.filter((e) => e.status === "settled" && e.delivery === "failed").length,
+        blocked: finals.filter((e) => e.status === "denied").length,
+        declined: finals.filter((e) => e.status === "declined").length,
+      },
+    });
   } catch (err) {
     emit("run_end", { runId, error: String(err) });
   } finally {
@@ -195,6 +230,7 @@ app.post("/api/approve", (req, res) => {
 app.post("/api/reset", (_req, res) => {
   if (currentRun) return res.status(409).json({ error: "wait for the run to finish" });
   resetWorld();
+  history = [];
   emit("state", state());
   res.json(state());
 });

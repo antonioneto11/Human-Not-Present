@@ -152,3 +152,63 @@ export function evaluatePolicy(intent: PaymentIntent, cfg: PolicyConfig, ctx: Po
   }
   return { outcome: "allow", reason: `within policy (${atomicToUsd(intent.amountAtomic)} ≤ ${atomicToUsd(threshold)} auto-approve)` };
 }
+
+export interface PolicyCheck {
+  rule: PolicyRule | "approval";
+  ok: boolean;
+  text: string; // plain English, for people watching the agent
+}
+
+/**
+ * The same checks as evaluatePolicy, in the same order, written out in plain English
+ * for the playground. Stops at the first failed check, like evaluatePolicy does.
+ * Display only: evaluatePolicy is what decides (a test keeps the two in agreement).
+ */
+export function explainPolicy(intent: PaymentIntent, cfg: PolicyConfig, ctx: PolicyContext): PolicyCheck[] {
+  const out: PolicyCheck[] = [];
+  const amount = atomicToUsd(intent.amountAtomic);
+  const merchant = intent.merchant.toLowerCase();
+  const push = (rule: PolicyCheck["rule"], ok: boolean, yes: string, no: string) => {
+    out.push({ rule, ok, text: ok ? yes : no });
+    return ok;
+  };
+
+  if (!push("merchant_not_allowlisted", cfg.allowedMerchants.includes(merchant), "The shop is on your approved list.", "The shop is NOT on your approved list.")) return out;
+  if (cfg.mandate) {
+    const item = cfg.mandate.items.find((i) => i.resource.toLowerCase() === (intent.resource ?? "").toLowerCase());
+    if (!push("outside_mandate", Boolean(item), "This item is on your order.", "This item is NOT on your order.")) return out;
+  }
+  const pinned = cfg.merchantPayees?.[merchant];
+  if (pinned !== undefined) {
+    const ok = intent.payTo?.toLowerCase() === pinned.toLowerCase();
+    if (!push("payee_mismatch", ok, "The money goes to the shop's registered account.", `The shop asked for the money to go to a DIFFERENT account (${intent.payTo ?? "none"}).`)) return out;
+  }
+  if (!push("wrong_network", intent.network === ctx.expectedNetwork, "It's on the network your wallet uses.", `It asks for payment on a different network (${intent.network}).`)) return out;
+  if (!push("unsupported_asset", intent.asset.toLowerCase() === ctx.expectedAsset.toLowerCase(), "It's priced in USDC.", "It asks for a currency other than USDC.")) return out;
+  if (!push("invalid_amount", intent.amountAtomic > 0n, "The price is a valid amount.", "The price is not a valid amount.")) return out;
+  const cap = usdToAtomic(cfg.maxPerTransactionUsd);
+  if (!push("per_transaction_cap", intent.amountAtomic <= cap, `${amount} is within your ${atomicToUsd(cap)} limit per payment.`, `${amount} is MORE than your ${atomicToUsd(cap)} limit per payment.`)) return out;
+  if (cfg.mandate) {
+    const item = cfg.mandate.items.find((i) => i.resource.toLowerCase() === (intent.resource ?? "").toLowerCase())!;
+    const itemMax = usdToAtomic(item.maxUsd);
+    if (!push("over_mandate_price", intent.amountAtomic <= itemMax, `${amount} is within the ${atomicToUsd(itemMax)} you allowed for this item.`, `${amount} is MORE than the ${atomicToUsd(itemMax)} you allowed for this item.`)) return out;
+    if (item.maxQuantity !== undefined) {
+      const n = ctx.boughtThisTask ?? 0;
+      if (!push("mandate_quantity", n < item.maxQuantity, `Bought ${n} of ${item.maxQuantity} allowed so far.`, `Already bought ${n} of the ${item.maxQuantity} allowed.`)) return out;
+    }
+    const total = usdToAtomic(cfg.mandate.maxTotalUsd);
+    const spent = ctx.spentThisTaskAtomic ?? 0n;
+    const left = total > spent ? total - spent : 0n;
+    if (!push("mandate_total", spent + intent.amountAtomic <= total, `Fits in what's left of this order's budget (${atomicToUsd(left)} of ${atomicToUsd(total)}).`, `Doesn't fit in what's left of this order's budget (${atomicToUsd(left)} of ${atomicToUsd(total)}).`)) return out;
+  }
+  const budget = usdToAtomic(cfg.dailyBudgetUsd);
+  const leftToday = budget > ctx.spentTodayAtomic ? budget - ctx.spentTodayAtomic : 0n;
+  if (!push("daily_budget", ctx.spentTodayAtomic + intent.amountAtomic <= budget, `Fits in what's left of today's budget (${atomicToUsd(leftToday)} of ${atomicToUsd(budget)}).`, `Doesn't fit in what's left of today's budget (${atomicToUsd(leftToday)} of ${atomicToUsd(budget)}).`)) return out;
+  const threshold = usdToAtomic(cfg.approvalThresholdUsd);
+  out.push(
+    intent.amountAtomic > threshold
+      ? { rule: "approval", ok: false, text: `${amount} is above ${atomicToUsd(threshold)}, so a person has to approve it.` }
+      : { rule: "approval", ok: true, text: `${amount} is under ${atomicToUsd(threshold)}, so it doesn't need a person's approval.` },
+  );
+  return out;
+}

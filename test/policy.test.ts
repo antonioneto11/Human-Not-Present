@@ -79,3 +79,26 @@ test("mandate does not loosen the base policy: allowlist and cap still apply", (
   assert.equal(deny(evaluatePolicy(intent(0.01, { merchant: "evil.test", resource: "evil.test/x" }), wide, ctx)), "merchant_not_allowlisted");
   assert.equal(deny(evaluatePolicy(intent(5, { resource: "localhost:4021/big" }), wide, ctx)), "per_transaction_cap");
 });
+
+// ---- explainPolicy must agree with evaluatePolicy ----
+import { explainPolicy } from "../src/policy";
+test("explainPolicy's first failed check is exactly the rule evaluatePolicy denies with", () => {
+  const configs: PolicyConfig[] = [cfg, mandated, { ...mandated, merchantPayees: { "localhost:4021": "0x1111111111111111111111111111111111111111" } }];
+  const intents = [
+    intent(0.01), intent(0.01, { resource: "localhost:4021/api/weather" }), intent(0.05, { resource: "localhost:4021/api/weather" }),
+    intent(0.06, { resource: "localhost:4021/api/weather" }), intent(0.5, { resource: "localhost:4021/api/weather" }), intent(5),
+    intent(0.01, { merchant: "evil.test" }), intent(0.01, { network: "eip155:1", resource: "localhost:4021/api/weather" }),
+    intent(0.01, { asset: "0xdead", resource: "localhost:4021/api/weather" }), intent(0, { resource: "localhost:4021/api/weather" }),
+    intent(0.01, { payTo: "0x2222222222222222222222222222222222222222", resource: "localhost:4021/api/weather" }),
+    intent(0.01, { payTo: "0x1111111111111111111111111111111111111111", resource: "localhost:4021/api/weather" }), intent(0.5),
+  ];
+  const ctxs = [ctx, { ...ctx, spentTodayAtomic: usdToAtomic(1.99) }, { ...ctx, boughtThisTask: 1 }, { ...ctx, spentThisTaskAtomic: usdToAtomic(0.08) }];
+  for (const c of configs) for (const i of intents) for (const x of ctxs) {
+    const d = evaluatePolicy(i, c, x);
+    const checks = explainPolicy(i, c, x);
+    const failed = checks.find((k) => !k.ok);
+    if (d.outcome === "deny") assert.equal(failed?.rule, d.rule, JSON.stringify({ i: { ...i, amountAtomic: String(i.amountAtomic) }, d }));
+    else if (d.outcome === "needs_approval") assert.equal(failed?.rule, "approval");
+    else assert.equal(failed, undefined);
+  }
+});

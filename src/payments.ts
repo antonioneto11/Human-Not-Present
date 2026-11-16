@@ -8,7 +8,7 @@ import type { Approver } from "./approval";
 import { checkDelivery, PRODUCT_SPECS, type DeliveryResult, type DeliverySpecs } from "./delivery";
 import type { Ledger, LedgerEntry } from "./ledger";
 import { atomicToUsd } from "./money";
-import { evaluatePolicy, resourceKey, type PolicyConfig } from "./policy";
+import { evaluatePolicy, explainPolicy, resourceKey, type PolicyCheck, type PolicyConfig, type PolicyDecision } from "./policy";
 
 export interface NetworkInfo {
   caip2: string;
@@ -34,6 +34,12 @@ export type PurchaseResult =
   | { status: "free"; data: unknown }
   | { status: "denied" | "declined" | "failed"; message: string; receipt?: LedgerEntry };
 
+/** Live progress of one purchase, for anyone watching (the playground UI). */
+export type PaymentStep =
+  | { kind: "request"; url: string; merchant: string; reason: string }
+  | { kind: "policy"; url: string; merchant: string; amountUsd: string; payTo: string; checks: PolicyCheck[]; outcome: PolicyDecision["outcome"] }
+  | { kind: "paying"; url: string; amountUsd: string };
+
 /**
  * Wraps an x402 client so that every payment goes through:
  *   quote → idempotency check → policy → (human approval) → sign → send → settle → ledger
@@ -41,6 +47,8 @@ export type PurchaseResult =
 export class PaymentService {
   private readonly http: x402HTTPClient;
   readonly address: Hex;
+  /** Optional observer for live progress. Never affects decisions. */
+  onStep?: (step: PaymentStep) => void;
 
   constructor(
     privateKey: Hex,
@@ -98,6 +106,7 @@ export class PaymentService {
   }
 
   async purchase(url: string, reason: string): Promise<PurchaseResult> {
+    this.onStep?.({ kind: "request", url, merchant: new URL(url).host, reason });
     const key = this.idempotencyKey(url);
     const prior = this.ledger.find(key);
     if (prior?.status === "settled") {
@@ -130,24 +139,33 @@ export class PaymentService {
     };
 
     // 1. Policy (deterministic, not up to the model)
-    const decision = evaluatePolicy(
-      {
+    const intent = {
+      merchant: quote.merchant,
+      network: req.network,
+      asset: req.asset,
+      amountAtomic: BigInt(req.amount),
+      payTo: req.payTo,
+      resource: resourceKey(url),
+    };
+    const ctx = {
+      expectedNetwork: this.network.caip2,
+      expectedAsset: this.network.usdc,
+      spentTodayAtomic: this.ledger.spentTodayAtomic(),
+      spentThisTaskAtomic: this.ledger.spentForRunAtomic(this.runId),
+      boughtThisTask: this.ledger.countForRun(this.runId, (u) => resourceKey(u) === resourceKey(url)),
+    };
+    const decision = evaluatePolicy(intent, this.policy, ctx);
+    if (this.onStep) {
+      this.onStep({
+        kind: "policy",
+        url,
         merchant: quote.merchant,
-        network: req.network,
-        asset: req.asset,
-        amountAtomic: BigInt(req.amount),
+        amountUsd: quote.amountUsd!,
         payTo: req.payTo,
-        resource: resourceKey(url),
-      },
-      this.policy,
-      {
-        expectedNetwork: this.network.caip2,
-        expectedAsset: this.network.usdc,
-        spentTodayAtomic: this.ledger.spentTodayAtomic(),
-        spentThisTaskAtomic: this.ledger.spentForRunAtomic(this.runId),
-        boughtThisTask: this.ledger.countForRun(this.runId, (u) => resourceKey(u) === resourceKey(url)),
-      },
-    );
+        checks: explainPolicy(intent, this.policy, ctx),
+        outcome: decision.outcome,
+      });
+    }
     if (decision.outcome === "deny") {
       const receipt = this.ledger.append({ ...base, status: "denied", policy: `${decision.rule}: ${decision.reason}` });
       return { status: "denied", message: `Policy denied: ${decision.reason}`, receipt };
@@ -163,6 +181,7 @@ export class PaymentService {
     }
 
     // 3. Sign exactly the requirement that policy evaluated — nothing else.
+    this.onStep?.({ kind: "paying", url, amountUsd: quote.amountUsd! });
     const payload = await this.http.createPaymentPayload({ ...quote.paymentRequired, accepts: [req] });
     this.ledger.append({ ...base, status: "authorized", policy: decision.reason });
 
